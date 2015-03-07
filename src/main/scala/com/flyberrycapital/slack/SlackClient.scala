@@ -40,4 +40,5 @@ class SlackClient(private val apiToken: String) {
    val auth = new Auth(httpClient, apiToken)
    val channels = new Channels(httpClient, apiToken)
    val chat = new Chat(httpClient, apiToken)
+   val im = new IM(httpClient, apiToken)
 }
