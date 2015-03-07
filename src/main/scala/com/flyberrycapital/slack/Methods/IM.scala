@@ -19,8 +19,9 @@
  */
 package com.flyberrycapital.slack.Methods
 
-import com.flyberrycapital.slack.{HttpClient, SlackIM}
-import play.api.libs.json.JsObject
+import com.flyberrycapital.slack.{HttpClient, SlackIM, SlackMessage}
+import org.joda.time.DateTime
+import play.api.libs.json.{JsObject, JsValue}
 
 /**
  * The container for Slack's 'im' methods (https://api.slack.com/methods).
@@ -48,6 +49,98 @@ class IM(httpClient: HttpClient, apiToken: String) {
          (responseDict \ "ok").as[Boolean],
          (responseDict \ "no_op").asOpt[Boolean].getOrElse(false),
          (responseDict \ "already_closed").asOpt[Boolean].getOrElse(false)
+      )
+   }
+
+   /**
+    * https://api.slack.com/methods/im.history
+    *
+    * The format is exactly the same as channels.history, with the exception that we call im.history.
+    * Code copied from [[com.flyberrycapital.slack.Methods.Channels]]
+    *
+    * @param channel The channel ID of the IM to get history for.
+    * @param params A map of optional parameters and their values.
+    * @return ChannelHistoryResponse
+    */
+   def history(channel: String, params: Map[String, String] = Map()): ChannelHistoryResponse = {
+      val cleanedParams = params + ("channel" -> channel, "token" -> apiToken)
+
+      val responseDict = httpClient.get("im.history", cleanedParams)
+
+      val messages = (responseDict \ "messages").as[List[JsObject]] map { (x) =>
+         val user = Option((x \ "user").asOpt[String]
+            .getOrElse((x \ "user").asOpt[String]
+            .getOrElse(null)))
+
+         SlackMessage(
+            (x \ "type").as[String],
+            (x \ "ts").as[String],
+            user,
+            (x \ "text").asOpt[String],
+            (x \ "is_starred").asOpt[Boolean].getOrElse(false),
+            (x \ "attachments").asOpt[List[JsValue]].getOrElse(List()),
+            new DateTime(((x \ "ts").as[String].toDouble * 1000).toLong)
+         )
+      }
+
+      ChannelHistoryResponse(
+         (responseDict \ "ok").as[Boolean],
+         messages,
+         (responseDict \ "has_more").asOpt[Boolean].getOrElse(false),
+         (responseDict \ "is_limited").asOpt[Boolean].getOrElse(false)
+      )
+   }
+
+   /**
+    * A wrapper around the im.history method that allows users to stream through a channel's past messages
+    * seamlessly without having to worry about pagination and multiple queries.
+    *
+    * @param channel The channel ID to fetch history for.
+    * @param params A map of optional parameters and their values.
+    * @return Iterator of SlackMessages, ordered by time in descending order.
+    */
+   def historyStream(channel: String, params: Map[String, String] = Map()): Iterator[SlackMessage] = {
+      new Iterator[SlackMessage] {
+         var hist = history(channel, params = params)
+         var messages = hist.messages
+
+         def hasNext = messages.nonEmpty
+
+         def next() = {
+            val m = messages.head
+            messages = messages.tail
+
+            if (messages.isEmpty && hist.hasMore) {
+               hist = history(channel, params = params + ("latest" -> m.ts))
+               messages = hist.messages
+            }
+
+            m
+         }
+      }
+   }
+
+   /**
+    * https://api.slack.com/methods/im.list
+    *
+    * @return IMListResponse of all open IM channels
+    */
+   def list(): IMListResponse = {
+      val params = Map("token" -> apiToken)
+
+      val responseDict = httpClient.get("im.list", params)
+
+      val ims = (responseDict \ "ims").as[List[JsObject]] map { (im) =>
+         SlackIM(
+            (im \ "id").as[String],
+            (im \ "user").as[String],
+            (im \ "created").as[Int],
+            (im \ "is_user_deleted").as[Boolean]
+         )
+      }
+      IMListResponse(
+         (responseDict \ "ok").as[Boolean],
+         ims
       )
    }
 
@@ -87,23 +180,4 @@ class IM(httpClient: HttpClient, apiToken: String) {
       )
    }
 
-   def list(): IMListResponse = {
-      val params = Map("token" -> apiToken)
-
-      val responseDict = httpClient.get("im.list", params)
-
-      val ims = (responseDict \ "ims").as[List[JsObject]] map { (im) =>
-         SlackIM(
-            (im \ "id").as[String],
-            (im \ "user").as[String],
-            (im \ "created").as[Int],
-            (im \ "is_user_deleted").as[Boolean]
-         )
-      }
-
-      IMListResponse(
-         (responseDict \ "ok").as[Boolean],
-         ims
-      )
-   }
 }

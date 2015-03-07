@@ -42,4 +42,6 @@ object Responses {
    case class IMOpenResponse(ok: Boolean, channelId: String, no_op: Boolean, 
                              already_open: Boolean) extends SlackResponse
    case class IMListResponse(ok: Boolean, ims: List[SlackIM]) extends SlackResponse
+   case class IMHistoryResponse(ok: Boolean, messages: List[SlackMessage], 
+                                hasMore: Boolean, isLimited: Boolean)
 }

@@ -1,3 +1,24 @@
+/*
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
 import com.flyberrycapital.slack.HttpClient
 import com.flyberrycapital.slack.Methods.IM
 import org.joda.time.{DateTimeZone, DateTime}
@@ -5,6 +26,7 @@ import org.mockito.Mockito._
 import org.scalatest.mock.MockitoSugar
 import org.scalatest.{BeforeAndAfterEach, FlatSpec, Matchers}
 import play.api.libs.json.Json
+
 
 class IMSpec extends FlatSpec with MockitoSugar with Matchers with BeforeAndAfterEach {
 
@@ -32,6 +54,86 @@ class IMSpec extends FlatSpec with MockitoSugar with Matchers with BeforeAndAfte
            |    "already_closed": true
            |}
          """.stripMargin))
+
+      when(mockHttpClient.get("im.history", Map("channel" -> "C12345", "token" -> testApiKey)))
+         .thenReturn(Json.parse(
+         """
+           |{
+           |    "ok": true,
+           |    "latest": "1358547726.000003",
+           |    "messages": [
+           |        {
+           |            "type": "message",
+           |            "ts": "1358546515.000008",
+           |            "user": "U2147483896",
+           |            "text": "Hello"
+           |        },
+           |        {
+           |            "type": "message",
+           |            "ts": "1358546515.000007",
+           |            "user": "U2147483896",
+           |            "text": "World",
+           |            "is_starred": true
+           |        },
+           |        {
+           |            "type": "something_else",
+           |            "ts": "1358546515.000007",
+           |            "wibblr": true
+           |        }
+           |    ],
+           |    "has_more": true
+           |}
+         """.stripMargin))
+
+      when(mockHttpClient.get("im.history", Map("channel" -> "C12345", "latest" -> "1358546515.000007", "token" -> testApiKey)))
+         .thenReturn(Json.parse(
+         """
+           |{
+           |    "ok": true,
+           |    "latest": "1358547726.000003",
+           |    "messages": [
+           |        {
+           |            "type": "message",
+           |            "ts": "1358546515.000008",
+           |            "user": "U2147483896",
+           |            "text": "Hello"
+           |        },
+           |        {
+           |            "type": "message",
+           |            "ts": "1358546515.000007",
+           |            "user": "U2147483896",
+           |            "text": "World",
+           |            "is_starred": true
+           |        }
+           |    ],
+           |    "has_more": false
+           |}
+         """.stripMargin))
+
+      when(mockHttpClient.get("im.list", Map("token" -> testApiKey)))
+         .thenReturn(Json.parse(
+         """
+           |{
+           |    "ok": true,
+           |    "ims": [
+           |        {
+           |           "id": "D024BFF1M",
+           |           "is_im": true,
+           |           "user": "USLACKBOT",
+           |           "created": 1372105335,
+           |           "is_user_deleted": false
+           |        },
+           |        {
+           |           "id": "D024BE7RE",
+           |           "is_im": true,
+           |           "user": "U024BE7LH",
+           |           "created": 1356250715,
+           |           "is_user_deleted": false
+           |        }
+           |    ]
+           |}
+         """.stripMargin))
+
       when(mockHttpClient.get("im.mark", Map("channel" -> "D12345", "ts" -> "1234567890.123456", "token" -> testApiKey)))
          .thenReturn(Json.parse(
          """
@@ -64,29 +166,6 @@ class IMSpec extends FlatSpec with MockitoSugar with Matchers with BeforeAndAfte
            |}
          """.stripMargin))
 
-      when(mockHttpClient.get("im.list", Map("token" -> testApiKey)))
-         .thenReturn(Json.parse(
-         """
-           |{
-           |    "ok": true,
-           |    "ims": [
-           |        {
-           |           "id": "D024BFF1M",
-           |           "is_im": true,
-           |           "user": "USLACKBOT",
-           |           "created": 1372105335,
-           |           "is_user_deleted": false
-           |        },
-           |        {
-           |           "id": "D024BE7RE",
-           |           "is_im": true,
-           |           "user": "U024BE7LH",
-           |           "created": 1356250715,
-           |           "is_user_deleted": false
-           |        }
-           |    ]
-           |}
-         """.stripMargin))
       im = new IM(mockHttpClient, testApiKey)
    }
 
@@ -100,23 +179,31 @@ class IMSpec extends FlatSpec with MockitoSugar with Matchers with BeforeAndAfte
       responseErr.already_closed shouldBe true
    }
 
-   "IM.mark()" should "make a call to im.mark and return the response in an IMMarkResponse object" in {
-      val response = im.mark("D12345", "1234567890.123456")
+   "IM.history()" should "make a call to im.history and return the response in an ChannelHistoryResponse object" in {
+      val response = im.history("C12345")
+
       response.ok shouldBe true
+      response.hasMore shouldBe true
+      response.isLimited shouldBe false
+      response.messages should have length 3
+
+      val message = response.messages(0)
+
+      message.messageType shouldBe "message"
+      message.ts shouldBe "1358546515.000008"
+      message.user.get shouldBe "U2147483896"
+      message.text.get shouldBe "Hello"
+      message.time.isEqual(new DateTime(2013, 1, 18, 22, 1, 55, DateTimeZone.UTC)) shouldBe true
+
+      verify(mockHttpClient).get("im.history", Map("channel" -> "C12345", "token" -> testApiKey))
    }
 
-   "IM.open()" should "make a call to im.open and return the response in an IMOpenResponse object" in {
-      val responseOk = im.open("U12345")
-      responseOk.ok shouldBe true
-      responseOk.channelId shouldBe "D024BFF1M"
-      responseOk.no_op shouldBe false
-      responseOk.already_open shouldBe false
+   "IM.historyStream()" should "make repeated calls to im.history and return a stream of messages" in {
+      val messages = im.historyStream("C12345").toList
 
-      val responseErr = im.open("U54321")
-      responseErr.ok shouldBe true
-      responseErr.channelId shouldBe "D024BFF1M"
-      responseErr.no_op shouldBe true
-      responseErr.already_open shouldBe true
+      messages should have length 5
+
+      verify(mockHttpClient).get("im.history", Map("channel" -> "C12345", "latest" -> "1358546515.000007", "token" -> testApiKey))
    }
 
    "IM.list()" should "make a call to im.list and return the response in an IMListResponse object" in {
@@ -137,4 +224,22 @@ class IMSpec extends FlatSpec with MockitoSugar with Matchers with BeforeAndAfte
       im2.is_user_deleted shouldBe false
    }
 
+   "IM.mark()" should "make a call to im.mark and return the response in an IMMarkResponse object" in {
+      val response = im.mark("D12345", "1234567890.123456")
+      response.ok shouldBe true
+   }
+
+   "IM.open()" should "make a call to im.open and return the response in an IMOpenResponse object" in {
+      val responseOk = im.open("U12345")
+      responseOk.ok shouldBe true
+      responseOk.channelId shouldBe "D024BFF1M"
+      responseOk.no_op shouldBe false
+      responseOk.already_open shouldBe false
+
+      val responseErr = im.open("U54321")
+      responseErr.ok shouldBe true
+      responseErr.channelId shouldBe "D024BFF1M"
+      responseErr.no_op shouldBe true
+      responseErr.already_open shouldBe true
+   }
 }
